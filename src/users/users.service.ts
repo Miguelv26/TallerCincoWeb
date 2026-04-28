@@ -1,26 +1,110 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Animal } from 'src/animals/entities/animal.entity';
+import { Repository } from 'typeorm';
+import { User } from './entities/user.entity';
 
 @Injectable()
 export class UsersService {
-  create(createUserDto: CreateUserDto) {
-    return 'This action adds a new user';
+  private readonly logger = new Logger('UsersService');
+
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+    @InjectRepository(Animal)
+    private readonly animalRepo: Repository<Animal>,
+  ) {}
+
+  async create(dto: CreateUserDto) {
+    try {
+      const user = this.userRepo.create(dto);
+      return await this.userRepo.save(user);
+    } catch (err) { this.handleError(err); }
   }
 
-  findAll() {
-    return `This action returns all users`;
+  async findAll() {
+    return this.userRepo.find();
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} user`;
+  async findOne(id: string) {
+    const user = await this.userRepo.findOne({
+      where: { id },
+      relations: ['favorites', 'registeredAnimals'],
+    });
+    if (!user)
+      throw new NotFoundException(`User ${id} no encontrado`);
+    return user;
   }
 
-  update(id: number, updateUserDto: UpdateUserDto) {
-    return `This action updates a #${id} user`;
+  async update(id: string, dto: UpdateUserDto) {
+    const user = await this.findOne(id);
+    this.userRepo.merge(user, dto);
+    return this.userRepo.save(user);
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} user`;
+  async remove(id: string) {
+    const user = await this.findOne(id);
+    await this.userRepo.remove(user);
+    return { message: 'Usuario eliminado' };
   }
-}
+
+  private handleError(err: any) {
+    if (err.code === '23505')
+      throw new BadRequestException(`Email duplicado: ${err.detail}`);
+    throw new InternalServerErrorException('Error inesperado');
+  }
+  // ─── ManyToMany: Favoritos ───────────────────────
+
+    // Agrega un animal a la lista de favoritos del usuario
+  async addFavorite(userId: string, animalId: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['favorites'],
+    });
+    if (!user)
+      throw new NotFoundException(`User ${userId} no encontrado`);
+
+    const animal = await this.animalRepo.findOne({
+      where: { id: animalId },
+    });
+    if (!animal)
+      throw new NotFoundException(`Animal ${animalId} no encontrado`);
+
+    // Evita duplicados
+    const alreadyFavorited = user.favorites.some(
+      (a) => a.id === animalId
+    );
+    if (!alreadyFavorited)
+      user.favorites.push(animal);
+
+    return this.userRepo.save(user);
+  }
+
+    // Lista todos los favoritos del usuario
+  async getFavorites(userId: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['favorites', 'favorites.location'],
+    });
+    if (!user)
+      throw new NotFoundException(`User ${userId} no encontrado`);
+    return user.favorites;
+  }
+
+    // Quita un animal de los favoritos
+  async removeFavorite(userId: string, animalId: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['favorites'],
+    });
+    if (!user)
+      throw new NotFoundException(`User ${userId} no encontrado`);
+
+    user.favorites = user.favorites.filter(
+      (a) => a.id !== animalId
+    );
+    return this.userRepo.save(user);
+  }
+} // fin de UsersService
