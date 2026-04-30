@@ -10,6 +10,8 @@ import { User }             from '../users/entities/user.entity';
 import { CreateAnimalDto }  from './dto/create-animal.dto';
 import { UpdateAnimalDto }  from './dto/update-animal.dto';
 
+import { FilterAnimalDto } from './dto/filter-animal.dto';
+
 @Injectable()
 export class AnimalsService {
 
@@ -47,9 +49,13 @@ export class AnimalsService {
     } catch (err) { this.handleError(err); }
   }
 
-  async findAll() {
+  async findAll(filters: FilterAnimalDto) {
     return this.animalRepo.find({
-      relations: ['registeredBy'], // location se carga sola (eager: true)
+      where: {
+        ...(filters.especie && { especie: filters.especie }),
+        ...(filters.estado  && { estado:  filters.estado  }),
+      },
+      relations: ['registeredBy'],
     });
   }
 
