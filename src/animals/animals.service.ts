@@ -10,7 +10,9 @@ import { User }             from '../users/entities/user.entity';
 import { CreateAnimalDto }  from './dto/create-animal.dto';
 import { UpdateAnimalDto }  from './dto/update-animal.dto';
 
-import { FilterAnimalDto } from './dto/filter-animal.dto';
+
+import { QueryAnimalsDto } from './dto/query-animals.dto';
+
 
 @Injectable()
 export class AnimalsService {
@@ -49,14 +51,21 @@ export class AnimalsService {
     } catch (err) { this.handleError(err); }
   }
 
-  async findAll(filters: FilterAnimalDto) {
-    return this.animalRepo.find({
+  async findAll(query: QueryAnimalsDto) {
+    const page  = query.page  ?? 1;
+    const limit = query.limit ?? 10;
+
+    const [data, total] = await this.animalRepo.findAndCount({
       where: {
-        ...(filters.especie && { especie: filters.especie }),
-        ...(filters.estado  && { estado:  filters.estado  }),
+        ...(query.especie && { especie: query.especie }),
+        ...(query.estado  && { estado:  query.estado  }),
       },
       relations: ['registeredBy'],
+      skip:  (page - 1) * limit,
+      take:  limit,
     });
+
+    return { data, total, page, limit };
   }
 
   async findOne(id: string) {
